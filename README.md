@@ -1,5 +1,5 @@
-The original code come from https://github.com/ailintom/Cleanup-after-style-change-in-Zotero-for-Word, whose CleanUpAfterChangingAuthorDateToNotes macro show bo use in recent year.
-This macro is repaired by AI for word 365.
+The original code come from https://github.com/ailintom/Cleanup-after-style-change-in-Zotero-for-Word, whose CleanUpAfterChangingAuthorDateToNotes macro show no use in recent year.
+Here this macro is repaired by AI for word 365 and rename to CleanUpCitationsAfterPunctuation.
 
 The follow is the origin Readme
 
