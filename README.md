@@ -1,3 +1,6 @@
+The original code come from https://github.com/ailintom/Cleanup-after-style-change-in-Zotero-for-Word, whose CleanUpAfterChangingAuthorDateToNotes macro show bo use in recent year.
+This macro is repaired by AI for word 365.
+
 ### Cleanup after style change in Zotero for Word
 
 Many users encounter a problem after converting citations from an author-date style (or any other inline style, for example numbered citations)  to footnotes/endnotes and vice versa. In English these types of reference should be positioned differently respective the punctuation: footnote/endnote references are preceded by all punctuation marks except dashed and quotation marks and are not separated by a space from the preceding word. Author-date references should be preceded by a space and should precede any punctuation marks. 
