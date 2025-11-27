@@ -68,59 +68,161 @@ rCurrentPosition.Select
 uUndo.EndCustomRecord
 End Sub
 
-'This macro places footnote/endnote references after the punctuation marks and eliminates spaces before references
-Sub CleanUpAfterChangingAuthorDateToNotes()
-Dim uUndo As UndoRecord
-Set uUndo = Application.UndoRecord
-uUndo.StartCustomRecord ("Clean up citations after converting author-date citations to notes") 'Make the macro appear as a single operation on the Undo list
-Dim fField As Field, rRange As Range, strPrevChar As String, fFootnote As Footnote, eEndNote As Endnote
-Dim rCurrentPosition As Range
-Set rCurrentPosition = Selection.Range
-For Each fFootnote In ActiveDocument.Footnotes
-    If fFootnote.Range.Fields.Count > 0 Then
-    For Each fField In fFootnote.Range.Fields
-        If Left(fField.Code, Len(ZoteroFieldIdentifier)) = ZoteroFieldIdentifier Then
-        Call ProcessReference(fFootnote)
+' ========================================================================
+' Clean Up Citations After Converting Author-Date Style to Note Style
+' ========================================================================
+' Purpose: After changing Zotero citation style from author-date format 
+'          (e.g., "Smith, 2020") to note format (e.g., "[1]"), this macro:
+'          1. Removes spaces before citation numbers
+'          2. Moves punctuation from after citation numbers to before them
+'          
+' Example: "some text [1]." becomes "some text.[1]"
+'          "research [2], shows" becomes "research,[2] shows"
+' ========================================================================
+
+' Main subroutine: Process all Zotero citation fields in the document
+Sub CleanUpCitationsAfterPunctuation()
+    Dim uUndo As UndoRecord
+    Set uUndo = Application.UndoRecord
+    uUndo.StartCustomRecord ("Clean up citations after style change")
+    
+    Dim fField As Field
+    Dim rCurrentPosition As Range
+    Dim processedCount As Long
+    Dim i As Long
+    Dim totalFields As Long
+    
+    Set rCurrentPosition = Selection.Range
+    Application.ScreenUpdating = False
+    
+    ' Store total field count to avoid accessing .Count property in loop
+    totalFields = ActiveDocument.Fields.Count
+    
+    ' Process fields from end to beginning to avoid index shifting issues
+    For i = totalFields To 1 Step -1
+        ' Check if index is still valid (document modifications may change count)
+        If i <= ActiveDocument.Fields.Count Then
+            Set fField = ActiveDocument.Fields(i)
+            
+            ' Check if this is a Zotero citation field
+            If InStr(fField.Code.Text, "ZOTERO_ITEM") > 0 Or _
+               InStr(fField.Code.Text, "ZOTERO_CITATION") > 0 Then
+                
+                ' Select field for visual feedback
+                fField.Select
+                
+                ' Process this field
+                Call ProcessZoteroCitationField(fField)
+                
+                processedCount = processedCount + 1
+            End If
         End If
-    Next fField
-    End If
-Next fFootnote
-For Each eEndNote In ActiveDocument.Endnotes
-    If eEndNote.Range.Fields.Count > 0 Then
-    For Each fField In eEndNote.Range.Fields
-        If Left(fField.Code, Len(ZoteroFieldIdentifier)) = ZoteroFieldIdentifier Then
-        Call ProcessReference(eEndNote)
-        End If
-    Next fField
-    End If
-Next eEndNote
-rCurrentPosition.Select
-uUndo.EndCustomRecord
+    Next i
+    
+    Application.ScreenUpdating = True
+    rCurrentPosition.Select
+    uUndo.EndCustomRecord
+    
+    MsgBox "Processing complete! " & processedCount & " citations processed.", vbInformation
 End Sub
 
-'Removes a space before the Footnote/Endnote reference and places the punctuation signs (if any) before it
-Private Sub ProcessReference(Note)
-Dim iStart As Long, iEnd As Long
-Dim rPrevChar As Range, rNextChar As Range
-iStart = Note.Reference.Start
-If iStart > ActiveDocument.Range.Start Then
-    Set rPrevChar = ActiveDocument.Range(iStart - 1, iStart)
-    If rPrevChar.Text = " " Or rPrevChar.Text = ChrW(160) Then rPrevChar.Delete
-End If
-iEnd = Note.Reference.End
-If iEnd < ActiveDocument.Range.End Then
-    Set rNextChar = ActiveDocument.Range(iEnd, iEnd + 1)
-    If rNextChar.Text Like PunctuationPrecedingNoteReference Then
-        Do While rNextChar.End < ActiveDocument.Range.End
-        If ActiveDocument.Range(rNextChar.End, rNextChar.End + 1).Text Like PunctuationPrecedingNoteReference Then
-            rNextChar.End = rNextChar.End + 1 'if there is more than one punctuation sign following the note reference, place them all before the reference
+' Process a single Zotero citation field
+' Parameters:
+'   fField - The Zotero field object to process
+Private Sub ProcessZoteroCitationField(fField As Field)
+    On Error Resume Next
+    
+    Dim rBefore As Range, rAfter As Range
+    Dim fieldStart As Long, fieldEnd As Long
+    Dim punctText As String
+    Dim docStart As Long, docEnd As Long
+    Dim loopCounter As Integer
+    Dim maxLoops As Integer
+    
+    maxLoops = 10  ' Maximum consecutive spaces to remove (prevents infinite loops)
+    
+    docStart = ActiveDocument.Content.Start
+    docEnd = ActiveDocument.Content.End
+    
+    ' Get field position
+    fField.Select
+    fieldStart = Selection.Start
+    fieldEnd = Selection.End
+    
+    ' ===== Step 1: Remove spaces before the citation =====
+    loopCounter = 0
+    Do While fieldStart > docStart And loopCounter < maxLoops
+        ' Create a range containing the previous character
+        Set rBefore = ActiveDocument.Range(fieldStart - 1, fieldStart)
+        
+        ' Check if it's a space (regular space or non-breaking space)
+        If rBefore.Text = " " Or rBefore.Text = ChrW(160) Then
+            ' Delete the space
+            rBefore.Delete
+            loopCounter = loopCounter + 1
+            
+            ' Re-acquire field position
+            On Error Resume Next
+            fField.Select
+            If Err.Number <> 0 Then
+                ' Field is no longer valid, exit safely
+                Exit Sub
+            End If
+            On Error GoTo 0
+            
+            fieldStart = Selection.Start
+            fieldEnd = Selection.End
         Else
+            ' Not a space, exit loop
             Exit Do
         End If
-        Loop
-        Note.Reference.InsertBefore rNextChar.Text
-        rNextChar.Delete
+    Loop
+    
+    ' ===== Step 2: Move punctuation from after citation to before =====
+    ' Re-acquire field position
+    fField.Select
+    fieldStart = Selection.Start
+    fieldEnd = Selection.End
+    
+    ' Check if there's punctuation after the citation
+    If fieldEnd < docEnd Then
+        Set rAfter = ActiveDocument.Range(fieldEnd, fieldEnd + 1)
+        
+        If Not rAfter Is Nothing Then
+            If rAfter.Text Like PunctuationPrecedingNoteReference Then
+                ' Collect all consecutive punctuation marks (max 5 to prevent anomalies)
+                punctText = ""
+                loopCounter = 0
+                maxLoops = 5
+                
+                Do While rAfter.End <= docEnd And loopCounter < maxLoops
+                    Dim currentChar As String
+                    currentChar = ActiveDocument.Range(rAfter.Start + loopCounter, rAfter.Start + loopCounter + 1).Text
+                    
+                    If currentChar Like PunctuationPrecedingNoteReference Then
+                        punctText = punctText & currentChar
+                        loopCounter = loopCounter + 1
+                    Else
+                        Exit Do
+                    End If
+                Loop
+                
+                ' If punctuation was collected
+                If Len(punctText) > 0 Then
+                    ' Insert punctuation before the citation
+                    Set rBefore = ActiveDocument.Range(fieldStart, fieldStart)
+                    rBefore.InsertBefore punctText
+                    
+                    ' Delete original punctuation after the citation
+                    fField.Select
+                    fieldEnd = Selection.End
+                    Set rAfter = ActiveDocument.Range(fieldEnd, fieldEnd + Len(punctText))
+                    rAfter.Delete
+                End If
+            End If
+        End If
     End If
-End If
+    
+    On Error GoTo 0
 End Sub
 
